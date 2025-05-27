@@ -3,8 +3,8 @@ import sys
 import time
 from othello_ai import ai_move
 
-# BASE_URL = "http://localhost:8000"
-BASE_URL = 'https://7b679617-8c6b-4d0f-bb51-0505412c6c17.us-east-1.cloud.genez.io'
+BASE_URL = "http://localhost:8000"
+# BASE_URL = 'https://7b679617-8c6b-4d0f-bb51-0505412c6c17.us-east-1.cloud.genez.io'
 
 if __name__ == "__main__":
 
