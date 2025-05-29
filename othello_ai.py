@@ -1,4 +1,7 @@
 import random
+from typing import List, Tuple, Optional
+from ai import SimpleOthelloAI
+
 
 DIRECTIONS = [
     (-1, -1),  # UP-LEFT
@@ -38,8 +41,41 @@ def valid_movements(board, player):
 
     return valid_moves
  
-def ai_move(board, player): 
-    valid_moves = valid_movements(board, player)
+def print_othello_board(board):
+    symbol_map = {
+        1: '●',   # Black
+        -1: '○',  # White
+        0: '.'    # Empty
+    }
+    for row in board:
+        print(" ".join(symbol_map.get(cell, '?') for cell in row), flush=True)
+
+SEARCH_DEPTH = 6  # Adjust this value to control AI strength vs speed
+
+# Your original function with simple AI
+def ai_move(board, player):
+    """Main AI function - now just picks random valid move"""
+
+    print("=============================")
+    print_othello_board(board)
+
+    ai = SimpleOthelloAI()
+    
+    print(f"AI move called for player {player}")
+    
+    # Convert board to bitboards (for testing)
+    player_bb, opponent_bb = ai.board_to_bitboard(board, player)
+    print(f"Player bitboard: {bin(player_bb)}")
+    print(f"Opponent bitboard: {bin(opponent_bb)}")
+    
+    # For now, use simple 2D approach to find valid moves
+    valid_moves = ai.get_valid_moves_simple(board, player)
+    print(f"Valid moves found: {valid_moves}")
+    
     if valid_moves:
-        return random.choice(valid_moves)
+        chosen_move = random.choice(valid_moves)
+        print(f"Chosen move: {chosen_move}")
+        return chosen_move
+    
+    print("No valid moves found, returning None")
     return None
