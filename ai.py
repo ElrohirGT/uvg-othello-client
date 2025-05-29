@@ -1,3 +1,4 @@
+import random
 from typing import List, Tuple, Optional
 
 # Configuration constants
@@ -38,22 +39,22 @@ class SimpleOthelloAI:
         
         return board
     
-    def get_valid_moves_simple(self, board: List[List[int]], player: int) -> List[Tuple[int, int]]:
+    def get_valid_moves_simple(self, player_bb: int, opponent_bb: int) -> List[Tuple[int, int]]:
         """Get valid moves using bitboard-based validation"""
         valid_moves = []
-        player_bb, opponent_bb = self.board_to_bitboard(board, player)
+        occupied = player_bb | opponent_bb
 
-        for row in range(8):
-            for col in range(8):
-                move_pos = row * 8 + col
-                bit = 1 << move_pos
-                if (player_bb | opponent_bb) & bit:
-                    continue  # Not empty
+        for pos in range(64):
+            bit = 1 << pos
+            if occupied & bit:
+                continue  # Not empty
 
-                if self.is_valid_move_bitboard(move_pos, player_bb, opponent_bb):
-                    valid_moves.append((row, col))
+            if self.is_valid_move_bitboard(pos, player_bb, opponent_bb):
+                row, col = divmod(pos, 8)
+                valid_moves.append((row, col))
 
         return valid_moves
+    
 
 
     def is_valid_move_bitboard(self, move_pos: int, player_bb: int, opponent_bb: int) -> bool:
@@ -134,8 +135,96 @@ class SimpleOthelloAI:
             print(row_str)
         print()
 
-    def evaluate_position(self, board: Tuple[int, int], player: int) -> float:
-        player_bb, opponent_bb = self.board_to_bitboard(board, player)
+    def apply_move(self, move_pos: int, player_bb: int, opponent_bb: int) -> Tuple[int, int]:
+        """Apply a move and return updated (player_bb, opponent_bb)"""
+        flipped = 0
+        DIRECTIONS = [
+            1, -1, 8, -8, 9, -9, 7, -7
+        ]
+
+        for direction in DIRECTIONS:
+            pos = move_pos
+            captured = 0
+
+            while True:
+                if direction == -1 and pos % 8 == 0: break
+                if direction == 1 and pos % 8 == 7: break
+                if direction == -9 and (pos % 8 == 0 or pos < 8): break
+                if direction == -8 and pos < 8: break
+                if direction == -7 and (pos % 8 == 7 or pos < 8): break
+                if direction == 7 and (pos % 8 == 0 or pos > 55): break
+                if direction == 8 and pos > 55: break
+                if direction == 9 and (pos % 8 == 7 or pos > 55): break
+
+                pos += direction
+                if pos < 0 or pos > 63:
+                    break
+
+                bit = 1 << pos
+                if opponent_bb & bit:
+                    captured |= bit
+                elif player_bb & bit:
+                    flipped |= captured
+                    break
+                else:
+                    break
+
+        move_bit = 1 << move_pos
+        new_player_bb = player_bb | move_bit | flipped
+        new_opponent_bb = opponent_bb & ~flipped
+        return new_player_bb, new_opponent_bb
+
+    def minimax(self, player_bb: int, opponent_bb: int, depth: int, maximizing_player: bool) -> float:
+        """Negamax-style minimax with depth limit"""
+        if depth == 0:
+            return self.evaluate_position(player_bb, opponent_bb)
+
+        valid_moves = self.get_valid_moves_simple(player_bb, opponent_bb)
+
+        if not valid_moves:
+            # Try passing the turn if opponent still has moves
+            if self.get_valid_moves_simple(opponent_bb, player_bb):
+                return -self.minimax(opponent_bb, player_bb, depth, not maximizing_player)
+            else:
+                # No valid moves for either: game over
+                return self.evaluate_position(player_bb, opponent_bb)
+
+        best_score = float('-inf')
+        for row, col in valid_moves:
+            move_pos = row * 8 + col
+            new_player_bb, new_opponent_bb = self.apply_move(move_pos, player_bb, opponent_bb)
+            score = -self.minimax(new_opponent_bb, new_player_bb, depth - 1, not maximizing_player)
+            best_score = max(best_score, score)
+
+        return best_score
+
+    def select_best_move(self, player_bb: int, opponent_bb: int, depth: int) -> Tuple[int, int]:
+        """Find best move using minimax with guaranteed fallback (random among valid moves)"""
+        valid_moves = self.get_valid_moves_simple(player_bb, opponent_bb)
+
+        if not valid_moves:
+            # Fallback: choose randomly from all empty squares (unlikely, but guarantees a move)
+            empty_squares = [(r, c) for r in range(8) for c in range(8)
+                             if not ((player_bb | opponent_bb) & (1 << (r * 8 + c)))]
+            return random.choice(empty_squares) if empty_squares else (0, 0)  # Safety fallback
+
+        best_score = float('-inf')
+        best_moves = []
+
+        for row, col in valid_moves:
+            move_pos = row * 8 + col
+            new_player_bb, new_opponent_bb = self.apply_move(move_pos, player_bb, opponent_bb)
+            score = -self.minimax(new_opponent_bb, new_player_bb, depth - 1, False)
+
+            if score > best_score:
+                best_score = score
+                best_moves = [(row, col)]
+            elif score == best_score:
+                best_moves.append((row, col))
+
+        return random.choice(best_moves)
+
+    def evaluate_position(self, player_bb: int, opponent_bb: int) -> float:
         total_discs = bin(player_bb | opponent_bb).count("1")
         
         def count_bits(bb: int) -> int:
@@ -150,8 +239,8 @@ class SimpleOthelloAI:
             phase = 'late'
 
         # Mobility
-        my_moves = len(self.get_valid_moves_simple(board, player))
-        opp_moves = len(self.get_valid_moves_simple(board, -player))
+        my_moves = len(self.get_valid_moves_simple(player_bb, opponent_bb))
+        opp_moves = len(self.get_valid_moves_simple(opponent_bb, player_bb))
         mobility = 0
         if my_moves + opp_moves > 0:
             mobility = 100 * (my_moves - opp_moves) / (my_moves + opp_moves)

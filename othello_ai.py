@@ -75,14 +75,8 @@ def ai_move(board, player):
     print(f"Opponent bitboard: {bin(opponent_bb)}")
     
     # For now, use simple 2D approach to find valid moves
-    valid_moves = ai.get_valid_moves_simple(board, player)
-    print(ai.evaluate_position(board, player), flush=True)
+    valid_moves = ai.get_valid_moves_simple(player_bb, opponent_bb)
+    print(ai.evaluate_position(player_bb, opponent_bb), flush=True)
     print(f"Valid moves found: {valid_moves}")
     
-    if valid_moves:
-        chosen_move = random.choice(valid_moves)
-        print(f"Chosen move: {chosen_move}")
-        return chosen_move
-    
-    print("No valid moves found, returning None", flush=True)
-    return None
+    return ai.select_best_move(player_bb, opponent_bb, 3)
