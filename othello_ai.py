@@ -51,6 +51,7 @@ def print_othello_board(board):
         print(" ".join(symbol_map.get(cell, '?') for cell in row), flush=True)
 
 SEARCH_DEPTH = 6  # Adjust this value to control AI strength vs speed
+ai = SimpleOthelloAI()
 
 # Your original function with simple AI
 def ai_move(board, player):
@@ -64,8 +65,6 @@ def ai_move(board, player):
 
     print("=============================", flush=True)
     print_othello_board(board)
-
-    ai = SimpleOthelloAI()
     
     print(f"AI move called for player {player}")
     
