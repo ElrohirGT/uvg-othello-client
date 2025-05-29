@@ -39,42 +39,70 @@ class SimpleOthelloAI:
         return board
     
     def get_valid_moves_simple(self, board: List[List[int]], player: int) -> List[Tuple[int, int]]:
-        """Get valid moves using simple 2D array approach (for now)"""
+        """Get valid moves using bitboard-based validation"""
         valid_moves = []
-        opponent = -player
-        
+        player_bb, opponent_bb = self.board_to_bitboard(board, player)
+
         for row in range(8):
             for col in range(8):
-                if board[row][col] == 0:  # Empty square
-                    if self.is_valid_move(board, row, col, player):
-                        valid_moves.append((row, col))
-        
+                move_pos = row * 8 + col
+                bit = 1 << move_pos
+                if (player_bb | opponent_bb) & bit:
+                    continue  # Not empty
+
+                if self.is_valid_move_bitboard(move_pos, player_bb, opponent_bb):
+                    valid_moves.append((row, col))
+
         return valid_moves
-    
-    def is_valid_move(self, board: List[List[int]], row: int, col: int, player: int) -> bool:
-        """Check if a move is valid at given position"""
-        if board[row][col] != 0:
-            return False
-        
-        opponent = -player
-        directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
-        
-        for dr, dc in directions:
-            r, c = row + dr, col + dc
+
+
+    def is_valid_move_bitboard(self, move_pos: int, player_bb: int, opponent_bb: int) -> bool:
+        """Check if placing a piece at move_pos is valid using bitboards"""
+        if (player_bb | opponent_bb) & (1 << move_pos):
+            return False  # Square is not empty
+
+        DIRECTIONS = [
+            1, -1,        # E, W
+            8, -8,        # S, N
+            9, -9,        # SE, NW
+            7, -7         # SW, NE
+        ]
+
+        MASK_LEFT = 0xfefefefefefefefe
+        MASK_RIGHT = 0x7f7f7f7f7f7f7f7f
+
+        for direction in DIRECTIONS:
+            mask = 0xFFFFFFFFFFFFFFFF
+            pos = move_pos
             found_opponent = False
-            
-            # Look for opponent pieces in this direction
-            while 0 <= r < 8 and 0 <= c < 8 and board[r][c] == opponent:
-                found_opponent = True
-                r += dr
-                c += dc
-            
-            # If we found opponent pieces and then our piece, it's valid
-            if found_opponent and 0 <= r < 8 and 0 <= c < 8 and board[r][c] == player:
-                return True
-        
+
+            while True:
+                if direction == -1 and pos % 8 == 0: break
+                if direction == 1 and pos % 8 == 7: break
+                if direction == -9 and (pos % 8 == 0 or pos < 8): break
+                if direction == -8 and pos < 8: break
+                if direction == -7 and (pos % 8 == 7 or pos < 8): break
+                if direction == 7 and (pos % 8 == 0 or pos > 55): break
+                if direction == 8 and pos > 55: break
+                if direction == 9 and (pos % 8 == 7 or pos > 55): break
+
+                pos += direction
+                if pos < 0 or pos > 63:
+                    break
+
+                bit = 1 << pos
+                if opponent_bb & bit:
+                    found_opponent = True
+                    continue
+                elif player_bb & bit:
+                    if found_opponent:
+                        return True
+                    break
+                else:
+                    break
+
         return False
-    
+        
     def bitboard_to_move(self, move_bitboard: int) -> Tuple[int, int]:
         """Convert bitboard position to (row, col) coordinates"""
         if move_bitboard == 0:
@@ -105,3 +133,47 @@ class SimpleOthelloAI:
                     row_str += "0 "
             print(row_str)
         print()
+
+    def evaluate_position(self, board: Tuple[int, int], player: int) -> float:
+        player_bb, opponent_bb = self.board_to_bitboard(board, player)
+        total_discs = bin(player_bb | opponent_bb).count("1")
+        
+        def count_bits(bb: int) -> int:
+            return bin(bb).count("1")
+
+        # Phase detection
+        if total_discs <= 20:
+            phase = 'early'
+        elif total_discs <= 54:
+            phase = 'mid'
+        else:
+            phase = 'late'
+
+        # Mobility
+        my_moves = len(self.get_valid_moves_simple(board, player))
+        opp_moves = len(self.get_valid_moves_simple(board, -player))
+        mobility = 0
+        if my_moves + opp_moves > 0:
+            mobility = 100 * (my_moves - opp_moves) / (my_moves + opp_moves)
+
+        # Corners
+        corners = [0, 7, 56, 63]
+        corner_mask = sum(1 << i for i in corners)
+        player_corners = count_bits(player_bb & corner_mask)
+        opponent_corners = count_bits(opponent_bb & corner_mask)
+        corner_score = 25 * (player_corners - opponent_corners)
+
+        # Disc differential (only matter late)
+        disc_score = 0
+        if phase == 'late':
+            player_discs = count_bits(player_bb)
+            opponent_discs = count_bits(opponent_bb)
+            disc_score = 100 * (player_discs - opponent_discs) / (player_discs + opponent_discs)
+
+        # Final evaluation (tune weights as needed)
+        if phase == 'early':
+            return mobility + corner_score
+        elif phase == 'mid':
+            return mobility + 1.5 * corner_score
+        else:  # late
+            return mobility + 2 * corner_score + disc_score

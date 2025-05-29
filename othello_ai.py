@@ -54,6 +54,12 @@ SEARCH_DEPTH = 6  # Adjust this value to control AI strength vs speed
 
 # Your original function with simple AI
 def ai_move(board, player):
+    
+    if player == 1: 
+        print("WHITE", flush=True)
+    else :
+        print("BLACK", flush=True)
+
     """Main AI function - now just picks random valid move"""
 
     print("=============================", flush=True)
@@ -70,6 +76,7 @@ def ai_move(board, player):
     
     # For now, use simple 2D approach to find valid moves
     valid_moves = ai.get_valid_moves_simple(board, player)
+    print(ai.evaluate_position(board, player), flush=True)
     print(f"Valid moves found: {valid_moves}")
     
     if valid_moves:
