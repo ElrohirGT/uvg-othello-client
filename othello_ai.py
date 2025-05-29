@@ -56,7 +56,7 @@ SEARCH_DEPTH = 6  # Adjust this value to control AI strength vs speed
 def ai_move(board, player):
     """Main AI function - now just picks random valid move"""
 
-    print("=============================")
+    print("=============================", flush=True)
     print_othello_board(board)
 
     ai = SimpleOthelloAI()
@@ -77,5 +77,5 @@ def ai_move(board, player):
         print(f"Chosen move: {chosen_move}")
         return chosen_move
     
-    print("No valid moves found, returning None")
+    print("No valid moves found, returning None", flush=True)
     return None
