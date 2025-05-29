@@ -2,17 +2,20 @@ import random
 from typing import List, Tuple, Optional
 
 # Configuration constants
-SEARCH_DEPTH = 6  # For future use when we add minimax
+SEARCH_DEPTH = 6  # Default search depth for minimax
 
 class SimpleOthelloAI:
     def __init__(self):
-        self.branch_count = 0
-    
+        self.branch_count = 0  # Track how many branches are evaluated during search
+
     def board_to_bitboard(self, board: List[List[int]], player: int) -> Tuple[int, int]:
-        """Convert 2D board matrix to bitboards for both players"""
+        """
+        Convert a 2D board into two 64-bit integers (bitboards),
+        one for the current player and one for the opponent.
+        """
         player_bb = 0
         opponent_bb = 0
-        opponent = -player  # if player is 1 (black), opponent is -1 (white)
+        opponent = -player
         
         for row in range(8):
             for col in range(8):
@@ -23,9 +26,12 @@ class SimpleOthelloAI:
                     opponent_bb |= pos
         
         return player_bb, opponent_bb
-    
+
     def bitboard_to_board(self, player_bb: int, opponent_bb: int, player: int) -> List[List[int]]:
-        """Convert bitboards back to 2D board matrix"""
+        """
+        Convert bitboards back to a 2D board representation.
+        Used for visualization or fallback.
+        """
         board = [[0 for _ in range(8)] for _ in range(8)]
         opponent = -player
         
@@ -38,46 +44,42 @@ class SimpleOthelloAI:
                     board[row][col] = opponent
         
         return board
-    
+
     def get_valid_moves_simple(self, player_bb: int, opponent_bb: int) -> List[Tuple[int, int]]:
-        """Get valid moves using bitboard-based validation"""
+        """
+        Iterate over all board positions to find valid moves
+        for the current player based on the bitboard state.
+        """
         valid_moves = []
         occupied = player_bb | opponent_bb
 
         for pos in range(64):
             bit = 1 << pos
             if occupied & bit:
-                continue  # Not empty
+                continue
 
             if self.is_valid_move_bitboard(pos, player_bb, opponent_bb):
                 row, col = divmod(pos, 8)
                 valid_moves.append((row, col))
 
         return valid_moves
-    
-
 
     def is_valid_move_bitboard(self, move_pos: int, player_bb: int, opponent_bb: int) -> bool:
-        """Check if placing a piece at move_pos is valid using bitboards"""
+        """
+        Check whether placing a piece at a given position is a valid move.
+        Looks in all 8 directions to find if at least one opponent piece is flanked.
+        """
         if (player_bb | opponent_bb) & (1 << move_pos):
-            return False  # Square is not empty
+            return False  # Already occupied
 
-        DIRECTIONS = [
-            1, -1,        # E, W
-            8, -8,        # S, N
-            9, -9,        # SE, NW
-            7, -7         # SW, NE
-        ]
-
-        MASK_LEFT = 0xfefefefefefefefe
-        MASK_RIGHT = 0x7f7f7f7f7f7f7f7f
+        DIRECTIONS = [1, -1, 8, -8, 9, -9, 7, -7]  # 8 surrounding directions
 
         for direction in DIRECTIONS:
-            mask = 0xFFFFFFFFFFFFFFFF
             pos = move_pos
             found_opponent = False
 
             while True:
+                # Break if we cross board boundaries
                 if direction == -1 and pos % 8 == 0: break
                 if direction == 1 and pos % 8 == 7: break
                 if direction == -9 and (pos % 8 == 0 or pos < 8): break
@@ -97,30 +99,32 @@ class SimpleOthelloAI:
                     continue
                 elif player_bb & bit:
                     if found_opponent:
-                        return True
+                        return True  # Found a bracketed line
                     break
                 else:
                     break
 
-        return False
-        
+        return False  # No direction formed a valid capture
+
     def bitboard_to_move(self, move_bitboard: int) -> Tuple[int, int]:
-        """Convert bitboard position to (row, col) coordinates"""
+        """
+        Convert a bitboard with a single set bit into (row, col) coordinates.
+        """
         if move_bitboard == 0:
             return None
         
         pos = 0
-        temp = move_bitboard
-        while temp > 1:
-            temp >>= 1
+        while move_bitboard > 1:
+            move_bitboard >>= 1
             pos += 1
-        
-        row = pos // 8
-        col = pos % 8
-        return (row, col)
-    
+
+        return divmod(pos, 8)
+
     def print_bitboard(self, bitboard: int, label: str = ""):
-        """Debug function to visualize bitboard"""
+        """
+        Print the bitboard in a human-readable 8x8 format.
+        Used for debugging.
+        """
         if label:
             print(f"{label}:")
         
@@ -128,25 +132,24 @@ class SimpleOthelloAI:
             row_str = ""
             for col in range(8):
                 pos = 1 << (row * 8 + col)
-                if bitboard & pos:
-                    row_str += "1 "
-                else:
-                    row_str += "0 "
+                row_str += "1 " if bitboard & pos else "0 "
             print(row_str)
         print()
 
     def apply_move(self, move_pos: int, player_bb: int, opponent_bb: int) -> Tuple[int, int]:
-        """Apply a move and return updated (player_bb, opponent_bb)"""
+        """
+        Apply a move at `move_pos` to flip appropriate discs.
+        Returns updated bitboards after move execution.
+        """
         flipped = 0
-        DIRECTIONS = [
-            1, -1, 8, -8, 9, -9, 7, -7
-        ]
+        DIRECTIONS = [1, -1, 8, -8, 9, -9, 7, -7]
 
         for direction in DIRECTIONS:
             pos = move_pos
             captured = 0
 
             while True:
+                # Boundary checks
                 if direction == -1 and pos % 8 == 0: break
                 if direction == 1 and pos % 8 == 7: break
                 if direction == -9 and (pos % 8 == 0 or pos < 8): break
@@ -170,28 +173,27 @@ class SimpleOthelloAI:
                     break
 
         move_bit = 1 << move_pos
-        new_player_bb = player_bb | move_bit | flipped
-        new_opponent_bb = opponent_bb & ~flipped
-        return new_player_bb, new_opponent_bb
+        return player_bb | move_bit | flipped, opponent_bb & ~flipped
 
     def minimax(self, player_bb: int, opponent_bb: int, depth: int, maximizing_player: bool) -> float:
-        """Negamax-style minimax with depth limit"""
+        """
+        Basic minimax implementation without pruning.
+        Uses negamax convention (scores are negated across recursion).
+        """
         if depth == 0:
             return self.evaluate_position(player_bb, opponent_bb)
 
         valid_moves = self.get_valid_moves_simple(player_bb, opponent_bb)
 
         if not valid_moves:
-            # Try passing the turn if opponent still has moves
             if self.get_valid_moves_simple(opponent_bb, player_bb):
                 return -self.minimax(opponent_bb, player_bb, depth, not maximizing_player)
             else:
-                # No valid moves for either: game over
                 return self.evaluate_position(player_bb, opponent_bb)
 
         best_score = float('-inf')
         for row, col in valid_moves:
-            self.branch_count += 1  # Count this move as a branch
+            self.branch_count += 1
             move_pos = row * 8 + col
             new_player_bb, new_opponent_bb = self.apply_move(move_pos, player_bb, opponent_bb)
             score = -self.minimax(new_opponent_bb, new_player_bb, depth - 1, not maximizing_player)
@@ -199,16 +201,11 @@ class SimpleOthelloAI:
 
         return best_score
 
-    def minimax_alpha_beta(
-        self,
-        player_bb: int,
-        opponent_bb: int,
-        depth: int,
-        alpha: float,
-        beta: float,
-        maximizing_player: bool
-    ) -> float:
-        """Minimax with alpha-beta pruning."""
+    def minimax_alpha_beta(self, player_bb, opponent_bb, depth, alpha, beta, maximizing_player) -> float:
+        """
+        Minimax implementation with alpha-beta pruning.
+        Prunes branches that can't improve the outcome.
+        """
         if depth == 0:
             return self.evaluate_position(player_bb, opponent_bb)
 
@@ -222,27 +219,30 @@ class SimpleOthelloAI:
 
         best_score = float('-inf')
         for row, col in valid_moves:
-            self.branch_count += 1  # Count this move as a branch
+            self.branch_count += 1
             move_pos = row * 8 + col
             new_player_bb, new_opponent_bb = self.apply_move(move_pos, player_bb, opponent_bb)
             score = -self.minimax_alpha_beta(new_opponent_bb, new_player_bb, depth - 1, -beta, -alpha, not maximizing_player)
             best_score = max(best_score, score)
             alpha = max(alpha, best_score)
             if alpha >= beta:
-                break  # Beta cut-off
+                break  # Beta cutoff
 
         return best_score
 
     def select_best_move(self, player_bb: int, opponent_bb: int, depth: int) -> Tuple[int, int]:
-        """Find best move using minimax with guaranteed fallback (random among valid moves)"""
-        self.branch_count = 0  # Reset counter
+        """
+        Choose the best move by searching game tree using minimax with alpha-beta pruning.
+        Randomly breaks ties between equally good moves.
+        """
+        self.branch_count = 0
         valid_moves = self.get_valid_moves_simple(player_bb, opponent_bb)
 
         if not valid_moves:
-            # Fallback: choose randomly from all empty squares (unlikely, but guarantees a move)
+            # Fallback: pick random empty square if no valid moves (unusual case)
             empty_squares = [(r, c) for r in range(8) for c in range(8)
                              if not ((player_bb | opponent_bb) & (1 << (r * 8 + c)))]
-            return random.choice(empty_squares) if empty_squares else (0, 0)  # Safety fallback
+            return random.choice(empty_squares) if empty_squares else (0, 0)
 
         best_score = float('-inf')
         best_moves = []
@@ -250,8 +250,9 @@ class SimpleOthelloAI:
         for row, col in valid_moves:
             move_pos = row * 8 + col
             new_player_bb, new_opponent_bb = self.apply_move(move_pos, player_bb, opponent_bb)
-            # score = -self.minimax(new_opponent_bb, new_player_bb, depth - 1, False)
             score = -self.minimax_alpha_beta(new_opponent_bb, new_player_bb, depth - 1, float('-inf'), float('inf'), False)
+            # Uncommend to use normal minimax function without prunning
+            # score = -self.minimax(new_opponent_bb, new_player_bb, depth - 1, False)
 
             if score > best_score:
                 best_score = score
@@ -260,16 +261,21 @@ class SimpleOthelloAI:
                 best_moves.append((row, col))
 
         print(f"Branches explored: {self.branch_count}", flush=True)
-
         return random.choice(best_moves)
 
     def evaluate_position(self, player_bb: int, opponent_bb: int) -> float:
+        """
+        Evaluate the board based on:
+        - mobility (number of valid moves),
+        - corner control,
+        - disc difference (in late game only).
+        """
         total_discs = bin(player_bb | opponent_bb).count("1")
-        
+
         def count_bits(bb: int) -> int:
             return bin(bb).count("1")
 
-        # Phase detection
+        # Game phase
         if total_discs <= 20:
             phase = 'early'
         elif total_discs <= 54:
@@ -277,31 +283,28 @@ class SimpleOthelloAI:
         else:
             phase = 'late'
 
-        # Mobility
+        # Mobility: normalized difference in move count
         my_moves = len(self.get_valid_moves_simple(player_bb, opponent_bb))
         opp_moves = len(self.get_valid_moves_simple(opponent_bb, player_bb))
         mobility = 0
         if my_moves + opp_moves > 0:
             mobility = 100 * (my_moves - opp_moves) / (my_moves + opp_moves)
 
-        # Corners
+        # Corner control: stable positions
         corners = [0, 7, 56, 63]
         corner_mask = sum(1 << i for i in corners)
-        player_corners = count_bits(player_bb & corner_mask)
-        opponent_corners = count_bits(opponent_bb & corner_mask)
-        corner_score = 25 * (player_corners - opponent_corners)
+        corner_score = 25 * (count_bits(player_bb & corner_mask) - count_bits(opponent_bb & corner_mask))
 
-        # Disc differential (only matter late)
+        # Disc difference (only in late game)
         disc_score = 0
         if phase == 'late':
             player_discs = count_bits(player_bb)
             opponent_discs = count_bits(opponent_bb)
             disc_score = 100 * (player_discs - opponent_discs) / (player_discs + opponent_discs)
 
-        # Final evaluation (tune weights as needed)
         if phase == 'early':
             return mobility + corner_score
         elif phase == 'mid':
             return mobility + 1.5 * corner_score
-        else:  # late
+        else:
             return mobility + 2 * corner_score + disc_score
