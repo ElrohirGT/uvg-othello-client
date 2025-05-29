@@ -6,7 +6,7 @@ SEARCH_DEPTH = 6  # For future use when we add minimax
 
 class SimpleOthelloAI:
     def __init__(self):
-        pass
+        self.branch_count = 0
     
     def board_to_bitboard(self, board: List[List[int]], player: int) -> Tuple[int, int]:
         """Convert 2D board matrix to bitboards for both players"""
@@ -191,6 +191,7 @@ class SimpleOthelloAI:
 
         best_score = float('-inf')
         for row, col in valid_moves:
+            self.branch_count += 1  # Count this move as a branch
             move_pos = row * 8 + col
             new_player_bb, new_opponent_bb = self.apply_move(move_pos, player_bb, opponent_bb)
             score = -self.minimax(new_opponent_bb, new_player_bb, depth - 1, not maximizing_player)
@@ -198,8 +199,43 @@ class SimpleOthelloAI:
 
         return best_score
 
+    def minimax_alpha_beta(
+        self,
+        player_bb: int,
+        opponent_bb: int,
+        depth: int,
+        alpha: float,
+        beta: float,
+        maximizing_player: bool
+    ) -> float:
+        """Minimax with alpha-beta pruning."""
+        if depth == 0:
+            return self.evaluate_position(player_bb, opponent_bb)
+
+        valid_moves = self.get_valid_moves_simple(player_bb, opponent_bb)
+
+        if not valid_moves:
+            if self.get_valid_moves_simple(opponent_bb, player_bb):
+                return -self.minimax_alpha_beta(opponent_bb, player_bb, depth, -beta, -alpha, not maximizing_player)
+            else:
+                return self.evaluate_position(player_bb, opponent_bb)
+
+        best_score = float('-inf')
+        for row, col in valid_moves:
+            self.branch_count += 1  # Count this move as a branch
+            move_pos = row * 8 + col
+            new_player_bb, new_opponent_bb = self.apply_move(move_pos, player_bb, opponent_bb)
+            score = -self.minimax_alpha_beta(new_opponent_bb, new_player_bb, depth - 1, -beta, -alpha, not maximizing_player)
+            best_score = max(best_score, score)
+            alpha = max(alpha, best_score)
+            if alpha >= beta:
+                break  # Beta cut-off
+
+        return best_score
+
     def select_best_move(self, player_bb: int, opponent_bb: int, depth: int) -> Tuple[int, int]:
         """Find best move using minimax with guaranteed fallback (random among valid moves)"""
+        self.branch_count = 0  # Reset counter
         valid_moves = self.get_valid_moves_simple(player_bb, opponent_bb)
 
         if not valid_moves:
@@ -214,13 +250,16 @@ class SimpleOthelloAI:
         for row, col in valid_moves:
             move_pos = row * 8 + col
             new_player_bb, new_opponent_bb = self.apply_move(move_pos, player_bb, opponent_bb)
-            score = -self.minimax(new_opponent_bb, new_player_bb, depth - 1, False)
+            # score = -self.minimax(new_opponent_bb, new_player_bb, depth - 1, False)
+            score = -self.minimax_alpha_beta(new_opponent_bb, new_player_bb, depth - 1, float('-inf'), float('inf'), False)
 
             if score > best_score:
                 best_score = score
                 best_moves = [(row, col)]
             elif score == best_score:
                 best_moves.append((row, col))
+
+        print(f"Branches explored: {self.branch_count}", flush=True)
 
         return random.choice(best_moves)
 
