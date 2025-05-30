@@ -55,9 +55,12 @@ def print_othello_board(board):
 SEARCH_DEPTH = 6  # Adjust this value to control AI strength vs speed
 ai = SimpleOthelloAI()
 
+max_time = 0
+
 
 # Your original function with simple AI
 def ai_move(board, player):
+    global max_time
     start_time = time.time()
 
     if player == 1:
@@ -84,7 +87,7 @@ def ai_move(board, player):
 
     # best_move = ai.select_best_move(player_bb, opponent_bb, 6)
     result = subprocess.run(
-        ["./ia", str(player_bb), str(opponent_bb), "6"],
+        ["./ia", "-pBB=" + str(player_bb), "-opBB="str(opponent_bb), "-s=6"],
         capture_output=True,
         text=True,
     )
@@ -93,5 +96,11 @@ def ai_move(board, player):
     best_move = [int(x) for x in result.stdout.split(" ")]
     print(f"The best move is: {best_move}")
 
-    print(f"Took: {(time.time() - start_time)}")
+    took = time.time() - start_time
+    print(f"Took: {took}")
+
+    if max_time < took:
+        print("NEW MAX")
+        max_time = took
+
     return best_move

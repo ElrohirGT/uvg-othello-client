@@ -1,13 +1,14 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"math"
 	"math/bits"
 	"math/rand"
 	"os"
-	"strconv"
+	"runtime/pprof"
 )
 
 // Configuration constants
@@ -405,7 +406,28 @@ func (ai *SimpleOthelloAI) EvaluatePosition(playerBB, opponentBB uint64) float64
 
 // Example usage
 func main() {
-	// rand.Seed(time.Now().UnixNano())
+	var playerBB uint64
+	flag.Uint64Var(&playerBB, "pBB", 0, "The player bitboard")
+
+	var opponentBB uint64
+	flag.Uint64Var(&opponentBB, "opBB", 0, "The opponent bitboard")
+
+	var searchDepth int
+	flag.IntVar(&searchDepth, "s", SEARCH_DEPTH, "The search depth")
+
+	var cpuprofile string
+	flag.StringVar(&cpuprofile, "cpuprofile", "", "write cpu profile to file")
+	flag.Parse()
+
+	if cpuprofile != "" {
+		log.Print("Profiling program in:", cpuprofile)
+		f, err := os.Create(cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 
 	ai := NewSimpleOthelloAI()
 
@@ -425,18 +447,6 @@ func main() {
 	// playerBB, opponentBB := ai.BoardToBitboard(board, player)
 
 	// log.Printf("Trying to parse: %s", os.Args[1])
-	playerBB, err := strconv.ParseUint(os.Args[1], 10, 64)
-	if err != nil {
-		log.Fatalf("Invalid playerBB received! %s", err)
-	}
-	opponentBB, err := strconv.ParseUint(os.Args[2], 10, 64)
-	if err != nil {
-		log.Fatalf("Invalid opponentBB received! %s", err)
-	}
-	searchDepth, err := strconv.Atoi(os.Args[3])
-	if err != nil {
-		log.Fatalf("Invalid searchDepth received! %s", err)
-	}
 
 	bestMove := ai.SelectBestMove(uint64(playerBB), uint64(opponentBB), searchDepth)
 	fmt.Printf("%d %d", bestMove.Row, bestMove.Col)
