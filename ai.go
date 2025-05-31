@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"runtime/pprof"
+	"strings"
 )
 
 // Configuration constants
@@ -31,7 +32,7 @@ func NewSimpleOthelloAI() *SimpleOthelloAI {
 
 // BoardToBitboard converts a 2D board into two 64-bit integers (bitboards),
 // one for the current player and one for the opponent.
-func (ai *SimpleOthelloAI) BoardToBitboard(board [][]int, player int) (uint64, uint64) {
+func BoardToBitboard(board [][]int, player int) (uint64, uint64) {
 	var playerBB, opponentBB uint64
 	opponent := -player
 
@@ -51,7 +52,7 @@ func (ai *SimpleOthelloAI) BoardToBitboard(board [][]int, player int) (uint64, u
 
 // BitboardToBoard converts bitboards back to a 2D board representation.
 // Used for visualization or fallback.
-func (ai *SimpleOthelloAI) BitboardToBoard(playerBB, opponentBB uint64, player int) [][]int {
+func BitboardToBoard(playerBB, opponentBB uint64, player int) [][]int {
 	board := make([][]int, 8)
 	for i := range board {
 		board[i] = make([]int, 8)
@@ -73,6 +74,93 @@ func (ai *SimpleOthelloAI) BitboardToBoard(playerBB, opponentBB uint64, player i
 	return board
 }
 
+func IsNeighbourOf(pos, opponentBB uint64) bool {
+	centerMask, _ := BoardToBitboard([][]int{
+		{1, 1, 1, 0, 0, 0, 0, 0},
+		{1, 1, 1, 0, 0, 0, 0, 0},
+		{1, 1, 1, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+	}, 1)
+	topBottomMask, _ := BoardToBitboard([][]int{
+		{1, 1, 1, 0, 0, 0, 0, 0},
+		{1, 1, 1, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+	}, 1)
+	sidesMask, _ := BoardToBitboard([][]int{
+		{1, 1, 0, 0, 0, 0, 0, 0},
+		{1, 1, 0, 0, 0, 0, 0, 0},
+		{1, 1, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+	}, 1)
+	cornerMask, _ := BoardToBitboard([][]int{
+		{1, 1, 0, 0, 0, 0, 0, 0},
+		{1, 1, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+	}, 1)
+
+	bitIsSide := MathMod(pos, 8) == 0 || MathMod(pos, 8) == 7
+	bitIsTopBottom := InRangeInclusive(pos, 0, 7) || InRangeInclusive(pos, 8*7, 8*8-1)
+
+	mask := centerMask
+	maskCenter := uint64(8 + 1)
+	if pos == 0 {
+		mask = cornerMask
+		maskCenter = 0
+	} else if pos == 7 {
+		mask = cornerMask << 6
+		maskCenter = 7
+	} else if pos == 8*7 {
+		mask = cornerMask << (7*7 - 1)
+		maskCenter = 8 * 7
+	} else if pos == 63 {
+		mask = cornerMask << (7*7 + 5)
+		maskCenter = 63
+	} else if bitIsSide {
+		mask = sidesMask
+		maskCenter = 8
+		if MathMod(pos, 8) == 7 {
+			maskCenter = 9
+		}
+	} else if bitIsTopBottom {
+		mask = topBottomMask
+		maskCenter = 1
+		if InRangeInclusive(pos, 8*7, 8*8-1) {
+			maskCenter = 9
+		}
+	}
+
+	delta := pos - maskCenter
+	if delta < 0 {
+		mask = mask >> delta
+	} else {
+		mask = mask << delta
+	}
+
+	isNeighbour := (mask & uint64(1) << pos) != 0
+
+	// log.Print(PrintBitboard(mask, fmt.Sprintf("Is bitboard? %t, Idx: %d, Delta: %d", isNeighbour, pos, delta)))
+
+	return isNeighbour
+}
+
 // GetValidMovesSimple iterates over all board positions to find valid moves
 // for the current player based on the bitboard state.
 func (ai *SimpleOthelloAI) GetValidMovesSimple(playerBB, opponentBB uint64) []Move {
@@ -82,6 +170,10 @@ func (ai *SimpleOthelloAI) GetValidMovesSimple(playerBB, opponentBB uint64) []Mo
 	for pos := range 64 {
 		bit := uint64(1) << pos
 		if occupied&bit != 0 {
+			continue
+		}
+
+		if !IsNeighbourOf(uint64(pos), opponentBB) {
 			continue
 		}
 
@@ -169,24 +261,27 @@ func (ai *SimpleOthelloAI) BitboardToMove(moveBitboard uint64) *Move {
 
 // PrintBitboard prints the bitboard in a human-readable 8x8 format.
 // Used for debugging.
-func (ai *SimpleOthelloAI) PrintBitboard(bitboard uint64, label string) {
+func PrintBitboard(bitboard uint64, label string) string {
+	b := strings.Builder{}
 	if label != "" {
-		fmt.Printf("%s:\n", label)
+		b.WriteString(label)
+		b.WriteString(":\n")
 	}
 
 	for row := range 8 {
-		rowStr := ""
 		for col := range 8 {
 			pos := uint64(1) << (row*8 + col)
 			if bitboard&pos != 0 {
-				rowStr += "1 "
+				b.WriteString("1 ")
 			} else {
-				rowStr += "0 "
+				b.WriteString("0 ")
 			}
 		}
-		fmt.Println(rowStr)
+		b.WriteRune('\n')
 	}
-	fmt.Println()
+	b.WriteRune('\n')
+
+	return b.String()
 }
 
 // ApplyMove applies a move at movePos to flip appropriate discs.
