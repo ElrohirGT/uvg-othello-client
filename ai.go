@@ -1,15 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"math/bits"
 	"math/rand"
 	"os"
 	"runtime/pprof"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -624,11 +627,11 @@ func main() {
 	context, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	var playerBB uint64
-	flag.Uint64Var(&playerBB, "pBB", 0, "The player bitboard")
+	// var playerBB uint64
+	// flag.Uint64Var(&playerBB, "pBB", 0, "The player bitboard")
 
-	var opponentBB uint64
-	flag.Uint64Var(&opponentBB, "opBB", 0, "The opponent bitboard")
+	// var opponentBB uint64
+	// flag.Uint64Var(&opponentBB, "opBB", 0, "The opponent bitboard")
 
 	var searchDepth int
 	flag.IntVar(&searchDepth, "s", SEARCH_DEPTH, "The search depth")
@@ -666,6 +669,28 @@ func main() {
 
 	// log.Printf("Trying to parse: %s", os.Args[1])
 
-	bestMove := ai.SelectBestMove(context, uint64(playerBB), uint64(opponentBB), searchDepth)
-	fmt.Printf("%d %d", bestMove.Row, bestMove.Col)
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		line, _, err := reader.ReadLine()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			log.Fatalf("An error occurred reading line from stdin: %s", err)
+		}
+
+		parts := strings.Split(string(line), " ")
+
+		playerBB, err := strconv.ParseUint(parts[0], 10, 64)
+		if err != nil {
+			log.Fatalf("An error occurred parsing playerBB: %s", err)
+		}
+
+		opponentBB, err := strconv.ParseUint(parts[1], 10, 64)
+		if err != nil {
+			log.Fatalf("An error occurred parsing opponentBB: %s", err)
+		}
+
+		bestMove := ai.SelectBestMove(context, uint64(playerBB), uint64(opponentBB), searchDepth)
+		fmt.Printf("%d %d\n", bestMove.Row, bestMove.Col)
+	}
 }

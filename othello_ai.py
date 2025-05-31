@@ -54,13 +54,14 @@ def print_othello_board(board):
 
 SEARCH_DEPTH = 6  # Adjust this value to control AI strength vs speed
 ai = SimpleOthelloAI()
+ai_brain = None  # Holds the process handler
 
 max_time = 0
 
 
 # Your original function with simple AI
 def ai_move(board, player):
-    global max_time
+    global max_time, ai_brain
     start_time = time.time()
 
     if player == 1:
@@ -73,7 +74,7 @@ def ai_move(board, player):
     print("=============================", flush=True)
     print_othello_board(board)
 
-    print(f"AI move called for player {player}")
+    print(f"AI move called for player {player}", flush=True)
 
     # Convert board to bitboards (for testing)
     player_bb, opponent_bb = ai.board_to_bitboard(board, player)
@@ -86,21 +87,36 @@ def ai_move(board, player):
     # print(f"Valid moves found: {valid_moves}")
 
     # best_move = ai.select_best_move(player_bb, opponent_bb, 6)
-    result = subprocess.run(
-        ["./ia", "-pBB=" + str(player_bb), "-opBB=" + str(opponent_bb), "-s=10"],
-        capture_output=True,
-        text=True,
-    )
-    print(f"The result is: {result}")
+    if ai_brain == None:
+        print("Creating ai_brain...", flush=True)
+        ai_brain = subprocess.Popen(
+            ["./ia", "-s=10"], stdin=subprocess.PIPE, stdout=subprocess.PIPE
+        )
+        print("ai_brain created!", flush=True)
 
-    best_move = [int(x) for x in result.stdout.split(" ")]
-    print(f"The best move is: {best_move}")
+    ai_brain_command = f"{str(player_bb)} {str(opponent_bb)}\n"
+    print("Sending command:", ai_brain_command, flush=True)
+    ai_brain.stdin.write(ai_brain_command.encode("utf-8"))
+    ai_brain.stdin.flush()
+    print("Awaiting response...")
+    response = ai_brain.stdout.readline().decode("utf-8")
+    print("Brain response:", response, flush=True)
+    best_move = [int(x) for x in response.split(" ")]
+    # result = subprocess.run(
+    #     ["./ia", "-pBB=" + str(player_bb), "-opBB=" + str(opponent_bb), "-s=10"],
+    #     capture_output=True,
+    #     text=True,
+    # )
+    # print(f"The result is: {result}")
+
+    # best_move = [int(x) for x in result.stdout.split(" ")]
+    print(f"The best move is: {best_move}", flush=True)
 
     took = time.time() - start_time
-    print(f"Took: {took}")
+    print(f"Took: {took}", flush=True)
 
     if max_time < took:
-        print("NEW MAX")
+        print("NEW MAX", flush=True)
         max_time = took
 
     return best_move
