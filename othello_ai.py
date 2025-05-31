@@ -87,7 +87,7 @@ def ai_move(board, player):
 
     # best_move = ai.select_best_move(player_bb, opponent_bb, 6)
     result = subprocess.run(
-        ["./ia", "-pBB=" + str(player_bb), "-opBB=" + str(opponent_bb), "-s=6"],
+        ["./ia", "-pBB=" + str(player_bb), "-opBB=" + str(opponent_bb), "-s=10"],
         capture_output=True,
         text=True,
     )

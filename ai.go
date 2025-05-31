@@ -472,8 +472,8 @@ func (ai *SimpleOthelloAI) SelectBestMove(context context.Context, playerBB, opp
 	bestScore := math.Inf(-1)
 	bestMoves := make([]Move, 0, len(validMoves))
 
-	syncLimitMoveCount := 4
-	shouldParalellize := len(validMoves) > syncLimitMoveCount
+	parallelThreshold := 3
+	shouldParalellize := len(validMoves) >= parallelThreshold
 	if shouldParalellize {
 		// log.Printf("Too many valid moves (>%d), using go routines...", syncLimitMoveCount)
 		minMaxResultChan := make(chan *MiniMaxResult, len(validMoves))
@@ -557,8 +557,13 @@ func (ai *SimpleOthelloAI) SelectBestMove(context context.Context, playerBB, opp
 		log.Print("Reached timeout of ", timeout)
 	}
 
-	// fmt.Printf("Branches explored: %d\n", ai.BranchCount)
-	return bestMoves[rand.Intn(len(bestMoves))]
+	if len(bestMoves) > 0 {
+		// fmt.Printf("Branches explored: %d\n", ai.BranchCount)
+		return bestMoves[rand.Intn(len(bestMoves))]
+	} else {
+		log.Print("Ran out of time for best moves! Returning a random valid move...")
+		return validMoves[rand.Intn(len(validMoves))]
+	}
 }
 
 // EvaluatePosition evaluates the board based on:
