@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -10,6 +11,8 @@ import (
 	"os"
 	"runtime/pprof"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Configuration constants
@@ -74,47 +77,48 @@ func BitboardToBoard(playerBB, opponentBB uint64, player int) [][]int {
 	return board
 }
 
-func IsNeighbourOf(pos, opponentBB uint64) bool {
-	centerMask, _ := BoardToBitboard([][]int{
-		{1, 1, 1, 0, 0, 0, 0, 0},
-		{1, 1, 1, 0, 0, 0, 0, 0},
-		{1, 1, 1, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-	}, 1)
-	topBottomMask, _ := BoardToBitboard([][]int{
-		{1, 1, 1, 0, 0, 0, 0, 0},
-		{1, 1, 1, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-	}, 1)
-	sidesMask, _ := BoardToBitboard([][]int{
-		{1, 1, 0, 0, 0, 0, 0, 0},
-		{1, 1, 0, 0, 0, 0, 0, 0},
-		{1, 1, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-	}, 1)
-	cornerMask, _ := BoardToBitboard([][]int{
-		{1, 1, 0, 0, 0, 0, 0, 0},
-		{1, 1, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0},
-	}, 1)
+var centerMask, _ = BoardToBitboard([][]int{
+	{1, 1, 1, 0, 0, 0, 0, 0},
+	{1, 1, 1, 0, 0, 0, 0, 0},
+	{1, 1, 1, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+}, 1)
+var topBottomMask, _ = BoardToBitboard([][]int{
+	{1, 1, 1, 0, 0, 0, 0, 0},
+	{1, 1, 1, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+}, 1)
+var sidesMask, _ = BoardToBitboard([][]int{
+	{1, 1, 0, 0, 0, 0, 0, 0},
+	{1, 1, 0, 0, 0, 0, 0, 0},
+	{1, 1, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+}, 1)
+var cornerMask, _ = BoardToBitboard([][]int{
+	{1, 1, 0, 0, 0, 0, 0, 0},
+	{1, 1, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0},
+}, 1)
+
+func GetNeighboursFor(pos uint64) uint64 {
 
 	bitIsSide := MathMod(pos, 8) == 0 || MathMod(pos, 8) == 7
 	bitIsTopBottom := InRangeInclusive(pos, 0, 7) || InRangeInclusive(pos, 8*7, 8*8-1)
@@ -154,18 +158,31 @@ func IsNeighbourOf(pos, opponentBB uint64) bool {
 		mask = mask << delta
 	}
 
-	isNeighbour := (mask & uint64(1) << pos) != 0
+	// log.Print(PrintBitboard(mask, fmt.Sprintf("Idx: %d, Delta: %d", pos, delta)))
 
-	// log.Print(PrintBitboard(mask, fmt.Sprintf("Is bitboard? %t, Idx: %d, Delta: %d", isNeighbour, pos, delta)))
+	return mask
+}
 
-	return isNeighbour
+func GetNeighboursBitboards(opponentBB uint64) []uint64 {
+	bitboards := make([]uint64, 8*8/2)
+	for pos := range uint64(64) {
+		bit := uint64(1) << pos
+		if opponentBB&bit == 0 {
+			continue
+		}
+
+		bitboard := GetNeighboursFor(pos)
+		bitboards = append(bitboards, bitboard)
+	}
+	return bitboards
 }
 
 // GetValidMovesSimple iterates over all board positions to find valid moves
 // for the current player based on the bitboard state.
 func (ai *SimpleOthelloAI) GetValidMovesSimple(playerBB, opponentBB uint64) []Move {
-	var validMoves []Move
+	validMoves := make([]Move, 0, 10)
 	occupied := playerBB | opponentBB
+	neighboursBitboards := GetNeighboursBitboards(opponentBB)
 
 	for pos := range 64 {
 		bit := uint64(1) << pos
@@ -173,9 +190,20 @@ func (ai *SimpleOthelloAI) GetValidMovesSimple(playerBB, opponentBB uint64) []Mo
 			continue
 		}
 
-		if !IsNeighbourOf(uint64(pos), opponentBB) {
+		isNeighbourToOpponentPiece := false
+		for _, neighbourBB := range neighboursBitboards {
+			foundInBitboard := neighbourBB&bit != 0
+			if foundInBitboard {
+				isNeighbourToOpponentPiece = true
+				break
+			}
+		}
+		if !isNeighbourToOpponentPiece {
+			// log.Printf("Pos: %d is NOT a neighbour of an opponent piece!", pos)
 			continue
 		}
+
+		// log.Printf("Pos: %d is a neighbour of an opponent piece!", pos)
 
 		if ai.IsValidMoveBitboard(pos, playerBB, opponentBB) {
 			row, col := pos/8, pos%8
@@ -344,56 +372,65 @@ func (ai *SimpleOthelloAI) ApplyMove(movePos int, playerBB, opponentBB uint64) (
 
 // Minimax implements basic minimax without pruning.
 // Uses negamax convention (scores are negated across recursion).
-func (ai *SimpleOthelloAI) Minimax(playerBB, opponentBB uint64, depth int, maximizingPlayer bool) float64 {
-	if depth == 0 {
-		return ai.EvaluatePosition(playerBB, opponentBB)
-	}
-
-	validMoves := ai.GetValidMovesSimple(playerBB, opponentBB)
-
-	if len(validMoves) == 0 {
-		if len(ai.GetValidMovesSimple(opponentBB, playerBB)) > 0 {
-			return -ai.Minimax(opponentBB, playerBB, depth, !maximizingPlayer)
-		} else {
-			return ai.EvaluatePosition(playerBB, opponentBB)
-		}
-	}
-
-	bestScore := math.Inf(-1)
-	for _, move := range validMoves {
-		ai.BranchCount++
-		movePos := move.Row*8 + move.Col
-		newPlayerBB, newOpponentBB := ai.ApplyMove(movePos, playerBB, opponentBB)
-		score := -ai.Minimax(newOpponentBB, newPlayerBB, depth-1, !maximizingPlayer)
-		bestScore = math.Max(bestScore, score)
-	}
-
-	return bestScore
-}
+// func (ai *SimpleOthelloAI) Minimax(playerBB, opponentBB uint64, depth int, maximizingPlayer bool) float64 {
+// 	if depth == 0 {
+// 		return ai.EvaluatePosition(playerBB, opponentBB)
+// 	}
+//
+// 	validMoves := ai.GetValidMovesSimple(playerBB, opponentBB)
+//
+// 	if len(validMoves) == 0 {
+// 		if len(ai.GetValidMovesSimple(opponentBB, playerBB)) > 0 {
+// 			return -ai.Minimax(opponentBB, playerBB, depth, !maximizingPlayer)
+// 		} else {
+// 			return ai.EvaluatePosition(playerBB, opponentBB)
+// 		}
+// 	}
+//
+// 	bestScore := math.Inf(-1)
+// 	for _, move := range validMoves {
+// 		ai.BranchCount++
+// 		movePos := move.Row*8 + move.Col
+// 		newPlayerBB, newOpponentBB := ai.ApplyMove(movePos, playerBB, opponentBB)
+// 		score := -ai.Minimax(newOpponentBB, newPlayerBB, depth-1, !maximizingPlayer)
+// 		bestScore = math.Max(bestScore, score)
+// 	}
+//
+// 	return bestScore
+// }
 
 // MinimaxAlphaBeta implements minimax with alpha-beta pruning.
 // Prunes branches that can't improve the outcome.
-func (ai *SimpleOthelloAI) MinimaxAlphaBeta(playerBB, opponentBB uint64, depth int, alpha, beta float64, maximizingPlayer bool) float64 {
-	if depth == 0 {
-		return ai.EvaluatePosition(playerBB, opponentBB)
+func (ai *SimpleOthelloAI) MinimaxAlphaBeta(context context.Context, playerBB, opponentBB uint64, depth int, alpha, beta float64, maximizingPlayer bool) float64 {
+	if context.Err() != nil {
+		return 0
 	}
 
-	validMoves := ai.GetValidMovesSimple(playerBB, opponentBB)
+	playerValidMoves := ai.GetValidMovesSimple(playerBB, opponentBB)
+	oppValidMoves := ai.GetValidMovesSimple(opponentBB, playerBB)
 
-	if len(validMoves) == 0 {
-		if len(ai.GetValidMovesSimple(opponentBB, playerBB)) > 0 {
-			return -ai.MinimaxAlphaBeta(opponentBB, playerBB, depth, -beta, -alpha, !maximizingPlayer)
+	if depth == 0 {
+		return ai.EvaluatePosition(playerBB, opponentBB, len(playerValidMoves), len(oppValidMoves))
+	}
+
+	if len(playerValidMoves) == 0 {
+		if len(oppValidMoves) > 0 {
+			return -ai.MinimaxAlphaBeta(context, opponentBB, playerBB, depth, -beta, -alpha, !maximizingPlayer)
 		} else {
-			return ai.EvaluatePosition(playerBB, opponentBB)
+			return ai.EvaluatePosition(playerBB, opponentBB, len(playerValidMoves), len(oppValidMoves))
 		}
 	}
 
 	bestScore := math.Inf(-1)
-	for _, move := range validMoves {
+	for _, move := range playerValidMoves {
 		ai.BranchCount++
 		movePos := move.Row*8 + move.Col
 		newPlayerBB, newOpponentBB := ai.ApplyMove(movePos, playerBB, opponentBB)
-		score := -ai.MinimaxAlphaBeta(newOpponentBB, newPlayerBB, depth-1, -beta, -alpha, !maximizingPlayer)
+		score := -ai.MinimaxAlphaBeta(context, newOpponentBB, newPlayerBB, depth-1, -beta, -alpha, !maximizingPlayer)
+		if context.Err() != nil {
+			break
+		}
+
 		bestScore = math.Max(bestScore, score)
 		alpha = math.Max(alpha, bestScore)
 		if alpha >= beta {
@@ -404,13 +441,19 @@ func (ai *SimpleOthelloAI) MinimaxAlphaBeta(playerBB, opponentBB uint64, depth i
 	return bestScore
 }
 
+type MiniMaxResult struct {
+	Score float64
+	Move  Move
+}
+
 // SelectBestMove chooses the best move by searching game tree using minimax with alpha-beta pruning.
 // Randomly breaks ties between equally good moves.
-func (ai *SimpleOthelloAI) SelectBestMove(playerBB, opponentBB uint64, depth int) Move {
+func (ai *SimpleOthelloAI) SelectBestMove(context context.Context, playerBB, opponentBB uint64, depth int) Move {
 	ai.BranchCount = 0
 	validMoves := ai.GetValidMovesSimple(playerBB, opponentBB)
 
 	if len(validMoves) == 0 {
+		log.Print("Selecting a random movement...")
 		// Fallback: pick random empty square if no valid moves (unusual case)
 		var emptySquares []Move
 		for r := range 8 {
@@ -427,21 +470,91 @@ func (ai *SimpleOthelloAI) SelectBestMove(playerBB, opponentBB uint64, depth int
 	}
 
 	bestScore := math.Inf(-1)
-	var bestMoves []Move
+	bestMoves := make([]Move, 0, len(validMoves))
 
-	for _, move := range validMoves {
-		movePos := move.Row*8 + move.Col
-		newPlayerBB, newOpponentBB := ai.ApplyMove(movePos, playerBB, opponentBB)
-		score := -ai.MinimaxAlphaBeta(newOpponentBB, newPlayerBB, depth-1, math.Inf(-1), math.Inf(1), false)
-		// Uncomment to use normal minimax function without pruning
-		// score := -ai.Minimax(newOpponentBB, newPlayerBB, depth-1, false)
+	syncLimitMoveCount := 4
+	shouldParalellize := len(validMoves) > syncLimitMoveCount
+	if shouldParalellize {
+		// log.Printf("Too many valid moves (>%d), using go routines...", syncLimitMoveCount)
+		minMaxResultChan := make(chan *MiniMaxResult, len(validMoves))
 
-		if score > bestScore {
-			bestScore = score
-			bestMoves = []Move{move}
-		} else if score == bestScore {
-			bestMoves = append(bestMoves, move)
+		cumGroup := sync.WaitGroup{}
+
+		// CUMulative thread
+		cumGroup.Add(1)
+		go func() {
+			defer cumGroup.Done()
+
+			for {
+				select {
+				case <-context.Done():
+					return
+				case result := <-minMaxResultChan:
+					if result == nil {
+						return
+					}
+
+					if result.Score > bestScore {
+						bestScore = result.Score
+						bestMoves = []Move{result.Move}
+					} else if result.Score == bestScore {
+						bestMoves = append(bestMoves, result.Move)
+					}
+				}
+			}
+		}()
+
+		workerGroup := sync.WaitGroup{}
+		// High level movement threads
+		for _, move := range validMoves {
+			workerGroup.Add(1)
+			go func() {
+				defer func() {
+					// log.Printf("Thread for move %d finished!", i)
+					workerGroup.Done()
+				}()
+
+				movePos := move.Row*8 + move.Col
+				newPlayerBB, newOpponentBB := ai.ApplyMove(movePos, playerBB, opponentBB)
+				score := -ai.MinimaxAlphaBeta(context, newOpponentBB, newPlayerBB, depth-1, math.Inf(-1), math.Inf(1), false)
+				if context.Err() != nil {
+					return
+				}
+				// Uncomment to use normal minimax function without pruning
+				// score := -ai.Minimax(newOpponentBB, newPlayerBB, depth-1, false)
+
+				minMaxResultChan <- &MiniMaxResult{
+					Score: score,
+					Move:  move,
+				}
+			}()
 		}
+
+		// log.Print("Waiting for threads to finish...")
+		workerGroup.Wait()
+		close(minMaxResultChan)
+		cumGroup.Wait()
+	} else {
+		for _, move := range validMoves {
+			movePos := move.Row*8 + move.Col
+			newPlayerBB, newOpponentBB := ai.ApplyMove(movePos, playerBB, opponentBB)
+			score := -ai.MinimaxAlphaBeta(context, newOpponentBB, newPlayerBB, depth-1, math.Inf(-1), math.Inf(1), false)
+			if context.Err() != nil {
+				break
+			}
+			// Uncomment to use normal minimax function without pruning
+			// score := -ai.Minimax(newOpponentBB, newPlayerBB, depth-1, false)
+
+			if score > bestScore {
+				bestScore = score
+				bestMoves = []Move{move}
+			} else if score == bestScore {
+				bestMoves = append(bestMoves, move)
+			}
+		}
+	}
+	if context.Err() != nil {
+		log.Print("Reached timeout of ", timeout)
 	}
 
 	// fmt.Printf("Branches explored: %d\n", ai.BranchCount)
@@ -452,7 +565,7 @@ func (ai *SimpleOthelloAI) SelectBestMove(playerBB, opponentBB uint64, depth int
 // - mobility (number of valid moves),
 // - corner control,
 // - disc difference (in late game only).
-func (ai *SimpleOthelloAI) EvaluatePosition(playerBB, opponentBB uint64) float64 {
+func (ai *SimpleOthelloAI) EvaluatePosition(playerBB, opponentBB uint64, playerValidMoveCount, oppValidMoveCount int) float64 {
 	totalDiscs := bits.OnesCount64(playerBB | opponentBB)
 
 	// Game phase
@@ -466,11 +579,11 @@ func (ai *SimpleOthelloAI) EvaluatePosition(playerBB, opponentBB uint64) float64
 	}
 
 	// Mobility: normalized difference in move count
-	myMoves := len(ai.GetValidMovesSimple(playerBB, opponentBB))
-	oppMoves := len(ai.GetValidMovesSimple(opponentBB, playerBB))
+	// myMoves := len(ai.GetValidMovesSimple(playerBB, opponentBB))
+	// oppMoves := len(ai.GetValidMovesSimple(opponentBB, playerBB))
 	mobility := 0.0
-	if myMoves+oppMoves > 0 {
-		mobility = 100.0 * float64(myMoves-oppMoves) / float64(myMoves+oppMoves)
+	if playerValidMoveCount+oppValidMoveCount > 0 {
+		mobility = 100.0 * float64(playerValidMoveCount-oppValidMoveCount) / float64(playerValidMoveCount+oppValidMoveCount)
 	}
 
 	// Corner control: stable positions
@@ -499,8 +612,13 @@ func (ai *SimpleOthelloAI) EvaluatePosition(playerBB, opponentBB uint64) float64
 	}
 }
 
+var timeout = time.Second * 3
+
 // Example usage
 func main() {
+	context, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	var playerBB uint64
 	flag.Uint64Var(&playerBB, "pBB", 0, "The player bitboard")
 
@@ -515,7 +633,7 @@ func main() {
 	flag.Parse()
 
 	if cpuprofile != "" {
-		log.Print("Profiling program in:", cpuprofile)
+		log.Print("Profiling program in: ", cpuprofile)
 		f, err := os.Create(cpuprofile)
 		if err != nil {
 			log.Fatal(err)
@@ -543,6 +661,6 @@ func main() {
 
 	// log.Printf("Trying to parse: %s", os.Args[1])
 
-	bestMove := ai.SelectBestMove(uint64(playerBB), uint64(opponentBB), searchDepth)
+	bestMove := ai.SelectBestMove(context, uint64(playerBB), uint64(opponentBB), searchDepth)
 	fmt.Printf("%d %d", bestMove.Row, bestMove.Col)
 }
