@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -28,12 +29,12 @@ type Move struct {
 
 // SimpleOthelloAI represents the AI player
 type SimpleOthelloAI struct {
-	BranchCount int // Track how many branches are evaluated during search
+	BranchCount atomic.Uint64 // Track how many branches are evaluated during search
 }
 
 // NewSimpleOthelloAI creates a new AI instance
 func NewSimpleOthelloAI() *SimpleOthelloAI {
-	return &SimpleOthelloAI{BranchCount: 0}
+	return &SimpleOthelloAI{BranchCount: atomic.Uint64{}}
 }
 
 // BoardToBitboard converts a 2D board into two 64-bit integers (bitboards),
@@ -180,9 +181,20 @@ func GetNeighboursBitboards(opponentBB uint64) []uint64 {
 	return bitboards
 }
 
+// var validMovesCache = sync.Map{}
+
 // GetValidMovesSimple iterates over all board positions to find valid moves
 // for the current player based on the bitboard state.
 func (ai *SimpleOthelloAI) GetValidMovesSimple(playerBB, opponentBB uint64) []Move {
+	// validMovesCache.LoadOrStore(playerBB, &sync.Map{})
+	// if innerCache, found := validMovesCache.Load(playerBB); found {
+	// 	cache := innerCache.(*sync.Map)
+	// 	if moves, found := cache.Load(opponentBB); found {
+	// 		// log.Printf("CACHE HIT!")
+	// 		return moves.([]Move)
+	// 	}
+	// }
+
 	validMoves := make([]Move, 0, 10)
 	occupied := playerBB | opponentBB
 	neighboursBitboards := GetNeighboursBitboards(opponentBB)
@@ -214,6 +226,9 @@ func (ai *SimpleOthelloAI) GetValidMovesSimple(playerBB, opponentBB uint64) []Mo
 		}
 	}
 
+	// validMovesCache[playerBB][opponentBB] = validMoves
+	// cache, _ := validMovesCache.Load(playerBB)
+	// cache.(*sync.Map).Store(opponentBB, validMoves)
 	return validMoves
 }
 
@@ -426,7 +441,8 @@ func (ai *SimpleOthelloAI) MinimaxAlphaBeta(context context.Context, playerBB, o
 
 	bestScore := math.Inf(-1)
 	for _, move := range playerValidMoves {
-		ai.BranchCount++
+		ai.BranchCount.Add(1)
+		// ai.BranchCount++
 		movePos := move.Row*8 + move.Col
 		newPlayerBB, newOpponentBB := ai.ApplyMove(movePos, playerBB, opponentBB)
 		score := -ai.MinimaxAlphaBeta(context, newOpponentBB, newPlayerBB, depth-1, -beta, -alpha, !maximizingPlayer)
@@ -452,7 +468,7 @@ type MiniMaxResult struct {
 // SelectBestMove chooses the best move by searching game tree using minimax with alpha-beta pruning.
 // Randomly breaks ties between equally good moves.
 func (ai *SimpleOthelloAI) SelectBestMove(context context.Context, playerBB, opponentBB uint64, depth int) Move {
-	ai.BranchCount = 0
+	ai.BranchCount = atomic.Uint64{}
 	validMoves := ai.GetValidMovesSimple(playerBB, opponentBB)
 
 	if len(validMoves) == 0 {
@@ -569,6 +585,16 @@ func (ai *SimpleOthelloAI) SelectBestMove(context context.Context, playerBB, opp
 	}
 }
 
+var GAME_PHASE = struct {
+	EARLY  int
+	MIDDLE int
+	LATE   int
+}{
+	EARLY:  0,
+	MIDDLE: 1,
+	LATE:   2,
+}
+
 // EvaluatePosition evaluates the board based on:
 // - mobility (number of valid moves),
 // - corner control,
@@ -577,13 +603,11 @@ func (ai *SimpleOthelloAI) EvaluatePosition(playerBB, opponentBB uint64, playerV
 	totalDiscs := bits.OnesCount64(playerBB | opponentBB)
 
 	// Game phase
-	var phase string
+	phase := GAME_PHASE.LATE
 	if totalDiscs <= 20 {
-		phase = "early"
+		phase = GAME_PHASE.EARLY
 	} else if totalDiscs <= 54 {
-		phase = "mid"
-	} else {
-		phase = "late"
+		phase = GAME_PHASE.MIDDLE
 	}
 
 	// Mobility: normalized difference in move count
@@ -604,16 +628,16 @@ func (ai *SimpleOthelloAI) EvaluatePosition(playerBB, opponentBB uint64, playerV
 
 	// Disc difference (only in late game)
 	discScore := 0.0
-	if phase == "late" {
+	if phase == GAME_PHASE.LATE {
 		playerDiscs := bits.OnesCount64(playerBB)
 		opponentDiscs := bits.OnesCount64(opponentBB)
 		discScore = 100.0 * float64(playerDiscs-opponentDiscs) / float64(playerDiscs+opponentDiscs)
 	}
 
 	switch phase {
-	case "early":
+	case GAME_PHASE.EARLY:
 		return mobility + cornerScore
-	case "mid":
+	case GAME_PHASE.MIDDLE:
 		return mobility + 1.5*cornerScore
 	default: // late
 		return mobility + 2*cornerScore + discScore
@@ -624,8 +648,6 @@ var timeout = time.Second * 3
 
 // Example usage
 func main() {
-	context, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
 
 	// var playerBB uint64
 	// flag.Uint64Var(&playerBB, "pBB", 0, "The player bitboard")
@@ -652,25 +674,11 @@ func main() {
 
 	ai := NewSimpleOthelloAI()
 
-	// Example board setup (standard Othello starting position)
-	// board := [][]int{
-	// 	{0, 0, 0, 0, 0, 0, 0, 0},
-	// 	{0, 0, 0, 0, 0, 0, 0, 0},
-	// 	{0, 0, 0, 0, 0, 0, 0, 0},
-	// 	{0, 0, 0, -1, 1, 0, 0, 0},
-	// 	{0, 0, 0, 1, -1, 0, 0, 0},
-	// 	{0, 0, 0, 0, 0, 0, 0, 0},
-	// 	{0, 0, 0, 0, 0, 0, 0, 0},
-	// 	{0, 0, 0, 0, 0, 0, 0, 0},
-	// }
-
-	// player := 1
-	// playerBB, opponentBB := ai.BoardToBitboard(board, player)
-
-	// log.Printf("Trying to parse: %s", os.Args[1])
-
 	reader := bufio.NewReader(os.Stdin)
 	for {
+		context, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
 		line, _, err := reader.ReadLine()
 		if err == io.EOF {
 			break
@@ -691,6 +699,8 @@ func main() {
 		}
 
 		bestMove := ai.SelectBestMove(context, uint64(playerBB), uint64(opponentBB), searchDepth)
+		log.Printf("Analized %d branches", ai.BranchCount.Load())
 		fmt.Printf("%d %d\n", bestMove.Row, bestMove.Col)
+		cancel()
 	}
 }

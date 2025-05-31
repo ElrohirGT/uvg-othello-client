@@ -90,7 +90,7 @@ def ai_move(board, player):
     if ai_brain == None:
         print("Creating ai_brain...", flush=True)
         ai_brain = subprocess.Popen(
-            ["./ia", "-s=10"], stdin=subprocess.PIPE, stdout=subprocess.PIPE
+            ["./ia", "-s=7"], stdin=subprocess.PIPE, stdout=subprocess.PIPE
         )
         print("ai_brain created!", flush=True)
 
