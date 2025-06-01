@@ -491,7 +491,7 @@ func (ai *SimpleOthelloAI) SelectBestMove(context context.Context, playerBB, opp
 	bestScore := math.Inf(-1)
 	bestMoves := make([]Move, 0, len(validMoves))
 
-	parallelThreshold := 3
+	parallelThreshold := 5
 	shouldParalellize := len(validMoves) >= parallelThreshold
 	if shouldParalellize {
 		// log.Printf("Too many valid moves (>%d), using go routines...", syncLimitMoveCount)
