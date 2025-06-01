@@ -660,6 +660,9 @@ func main() {
 
 	var cpuprofile string
 	flag.StringVar(&cpuprofile, "cpuprofile", "", "write cpu profile to file")
+
+	var memprofile string
+	flag.StringVar(&memprofile, "memprofile", "", "write memory profile to file")
 	flag.Parse()
 
 	if cpuprofile != "" {
@@ -702,5 +705,14 @@ func main() {
 		log.Printf("Analized %d branches", ai.BranchCount.Load())
 		fmt.Printf("%d %d\n", bestMove.Row, bestMove.Col)
 		cancel()
+	}
+
+	if memprofile != "" {
+		f, err := os.Create(memprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.WriteHeapProfile(f)
+		f.Close()
 	}
 }
