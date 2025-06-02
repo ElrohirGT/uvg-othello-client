@@ -599,49 +599,291 @@ var GAME_PHASE = struct {
 // - mobility (number of valid moves),
 // - corner control,
 // - disc difference (in late game only).
+// EvaluatePosition evaluates the board with improved positional understanding
 func (ai *SimpleOthelloAI) EvaluatePosition(playerBB, opponentBB uint64, playerValidMoveCount, oppValidMoveCount int) float64 {
 	totalDiscs := bits.OnesCount64(playerBB | opponentBB)
+	emptySquares := 64 - totalDiscs
 
-	// Game phase
+	// Improved game phase detection
 	phase := GAME_PHASE.LATE
 	if totalDiscs <= 20 {
 		phase = GAME_PHASE.EARLY
-	} else if totalDiscs <= 54 {
+	} else if totalDiscs <= 50 { // Adjusted threshold
 		phase = GAME_PHASE.MIDDLE
 	}
 
-	// Mobility: normalized difference in move count
-	// myMoves := len(ai.GetValidMovesSimple(playerBB, opponentBB))
-	// oppMoves := len(ai.GetValidMovesSimple(opponentBB, playerBB))
-	mobility := 0.0
-	if playerValidMoveCount+oppValidMoveCount > 0 {
-		mobility = 100.0 * float64(playerValidMoveCount-oppValidMoveCount) / float64(playerValidMoveCount+oppValidMoveCount)
-	}
+	score := 0.0
 
-	// Corner control: stable positions
-	corners := []int{0, 7, 56, 63}
-	var cornerMask uint64
-	for _, i := range corners {
-		cornerMask |= uint64(1) << i
-	}
-	cornerScore := 25.0 * float64(bits.OnesCount64(playerBB&cornerMask)-bits.OnesCount64(opponentBB&cornerMask))
-
-	// Disc difference (only in late game)
-	discScore := 0.0
+	// 1. MOBILITY EVALUATION (Enhanced)
+	mobilityScore := ai.evaluateMobility(playerBB, opponentBB, playerValidMoveCount, oppValidMoveCount, phase)
+	
+	// 2. POSITIONAL EVALUATION
+	positionalScore := ai.evaluatePositional(playerBB, opponentBB, phase)
+	
+	// 3. STABILITY EVALUATION
+	stabilityScore := ai.evaluateStability(playerBB, opponentBB)
+	
+	// 4. ENDGAME EVALUATION
+	endgameScore := 0.0
 	if phase == GAME_PHASE.LATE {
-		playerDiscs := bits.OnesCount64(playerBB)
-		opponentDiscs := bits.OnesCount64(opponentBB)
-		discScore = 100.0 * float64(playerDiscs-opponentDiscs) / float64(playerDiscs+opponentDiscs)
+		endgameScore = ai.evaluateEndgame(playerBB, opponentBB, emptySquares)
 	}
 
+	// Phase-dependent weighting
 	switch phase {
 	case GAME_PHASE.EARLY:
-		return mobility + cornerScore
+		score = mobilityScore*1.0 + positionalScore*0.8 + stabilityScore*1.2
 	case GAME_PHASE.MIDDLE:
-		return mobility + 1.5*cornerScore
-	default: // late
-		return mobility + 2*cornerScore + discScore
+		score = mobilityScore*0.8 + positionalScore*1.0 + stabilityScore*1.5
+	default: // LATE
+		score = mobilityScore*0.6 + positionalScore*0.8 + stabilityScore*2.0 + endgameScore*1.5
 	}
+
+	return score
+}
+
+// Enhanced mobility evaluation considering move quality
+func (ai *SimpleOthelloAI) evaluateMobility(playerBB, opponentBB uint64, playerMoves, oppMoves int, phase int) float64 {
+	if playerMoves+oppMoves == 0 {
+		return 0
+	}
+
+	// Basic mobility
+	basicMobility := 100.0 * float64(playerMoves-oppMoves) / float64(playerMoves+oppMoves)
+	
+	// Potential mobility (empty squares adjacent to opponent)
+	playerPotential := ai.countPotentialMobility(playerBB, opponentBB)
+	oppPotential := ai.countPotentialMobility(opponentBB, playerBB)
+	
+	potentialMobility := 0.0
+	if playerPotential+oppPotential > 0 {
+		potentialMobility = 50.0 * float64(playerPotential-oppPotential) / float64(playerPotential+oppPotential)
+	}
+
+	// Weight current vs potential mobility by phase
+	if phase == GAME_PHASE.EARLY {
+		return basicMobility*0.6 + potentialMobility*0.4
+	}
+	return basicMobility*0.8 + potentialMobility*0.2
+}
+
+// Count potential future mobility
+func (ai *SimpleOthelloAI) countPotentialMobility(playerBB, opponentBB uint64) int {
+	occupied := playerBB | opponentBB
+	count := 0
+	
+	// Check empty squares adjacent to opponent pieces
+	for pos := 0; pos < 64; pos++ {
+		bit := uint64(1) << pos
+		if occupied&bit != 0 {
+			continue
+		}
+		
+		// Check if adjacent to opponent
+		if ai.isAdjacentTo(pos, opponentBB) {
+			count++
+		}
+	}
+	return count
+}
+
+// Enhanced positional evaluation with multiple factors
+func (ai *SimpleOthelloAI) evaluatePositional(playerBB, opponentBB uint64, phase int) float64 {
+	score := 0.0
+	
+	// 1. Corner control (most important)
+	cornerScore := ai.evaluateCorners(playerBB, opponentBB)
+	
+	// 2. Edge control
+	edgeScore := ai.evaluateEdges(playerBB, opponentBB)
+	
+	// 3. X-squares and C-squares (dangerous early, good late)
+	xCSquareScore := ai.evaluateXCSquares(playerBB, opponentBB, phase)
+	
+	// 4. Center control (important early)
+	centerScore := ai.evaluateCenter(playerBB, opponentBB, phase)
+
+	score = cornerScore*4.0 + edgeScore*2.0 + xCSquareScore + centerScore
+	return score
+}
+
+// Corner evaluation with adjacent square consideration
+func (ai *SimpleOthelloAI) evaluateCorners(playerBB, opponentBB uint64) float64 {
+	corners := []int{0, 7, 56, 63}
+	var cornerMask uint64
+	for _, pos := range corners {
+		cornerMask |= uint64(1) << pos
+	}
+	
+	playerCorners := bits.OnesCount64(playerBB & cornerMask)
+	oppCorners := bits.OnesCount64(opponentBB & cornerMask)
+	
+	return 25.0 * float64(playerCorners - oppCorners)
+}
+
+// Edge evaluation (excluding corners)
+func (ai *SimpleOthelloAI) evaluateEdges(playerBB, opponentBB uint64) float64 {
+	edgeMask := uint64(0xFF818181818181FF) // All edge squares
+	cornerMask := uint64(0x8100000000000081) // Corner squares
+	pureEdgeMask := edgeMask &^ cornerMask // Edges without corners
+	
+	playerEdges := bits.OnesCount64(playerBB & pureEdgeMask)
+	oppEdges := bits.OnesCount64(opponentBB & pureEdgeMask)
+	
+	return 5.0 * float64(playerEdges - oppEdges)
+}
+
+// X-squares and C-squares evaluation
+func (ai *SimpleOthelloAI) evaluateXCSquares(playerBB, opponentBB uint64, phase int) float64 {
+	// X-squares (diagonally adjacent to corners)
+	xSquareMask := uint64(0x0042000000004200)
+	// C-squares (orthogonally adjacent to corners)  
+	cSquareMask := uint64(0x0081424242810000)
+	
+	playerX := bits.OnesCount64(playerBB & xSquareMask)
+	oppX := bits.OnesCount64(opponentBB & xSquareMask)
+	playerC := bits.OnesCount64(playerBB & cSquareMask)
+	oppC := bits.OnesCount64(opponentBB & cSquareMask)
+	
+	xScore := float64(playerX - oppX)
+	cScore := float64(playerC - oppC)
+	
+	// These squares are bad early, neutral late
+	multiplier := -3.0 // Bad early
+	if phase == GAME_PHASE.LATE {
+		multiplier = 0.5 // Slightly good late
+	} else if phase == GAME_PHASE.MIDDLE {
+		multiplier = -1.0 // Less bad in middle
+	}
+	
+	return multiplier * (xScore*2.0 + cScore*1.0)
+}
+
+// Center control evaluation
+func (ai *SimpleOthelloAI) evaluateCenter(playerBB, opponentBB uint64, phase int) float64 {
+	// Central 4x4 area
+	centerMask := uint64(0x0000001818000000)
+	
+	playerCenter := bits.OnesCount64(playerBB & centerMask)
+	oppCenter := bits.OnesCount64(opponentBB & centerMask)
+	
+	multiplier := 2.0 // Good early
+	if phase == GAME_PHASE.MIDDLE {
+		multiplier = 1.0
+	} else if phase == GAME_PHASE.LATE {
+		multiplier = 0.5 // Less important late
+	}
+	
+	return multiplier * float64(playerCenter - oppCenter)
+}
+
+// Basic stability evaluation
+func (ai *SimpleOthelloAI) evaluateStability(playerBB, opponentBB uint64) float64 {
+	playerStable := ai.countStableDiscs(playerBB, opponentBB)
+	oppStable := ai.countStableDiscs(opponentBB, playerBB)
+	
+	return 10.0 * float64(playerStable - oppStable)
+}
+
+// Count stable discs (simplified - just corners and secure edges for now)
+func (ai *SimpleOthelloAI) countStableDiscs(playerBB, opponentBB uint64) int {
+	stable := uint64(0)
+	
+	// Corners are always stable if occupied
+	corners := []int{0, 7, 56, 63}
+	for _, corner := range corners {
+		bit := uint64(1) << corner
+		if playerBB&bit != 0 {
+			stable |= bit
+		}
+	}
+	
+	// Add simple edge stability (connected to corners)
+	stable |= ai.findStableEdges(playerBB, opponentBB, stable)
+	
+	return bits.OnesCount64(stable)
+}
+
+// Find stable edges connected to stable corners
+func (ai *SimpleOthelloAI) findStableEdges(playerBB, opponentBB uint64, stable uint64) uint64 {
+	newStable := stable
+	occupied := playerBB | opponentBB
+	
+	// Check each edge from corners
+	edges := [][]int{
+		{0, 1, 2, 3, 4, 5, 6, 7},     // Top edge
+		{56, 57, 58, 59, 60, 61, 62, 63}, // Bottom edge
+		{0, 8, 16, 24, 32, 40, 48, 56},   // Left edge
+		{7, 15, 23, 31, 39, 47, 55, 63},  // Right edge
+	}
+	
+	for _, edge := range edges {
+		ai.addStableEdgeDiscs(&newStable, playerBB, occupied, edge)
+	}
+	
+	return newStable
+}
+
+// Helper to add stable discs along an edge
+func (ai *SimpleOthelloAI) addStableEdgeDiscs(stable *uint64, playerBB, occupied uint64, edge []int) {
+	// From left
+	for i := 0; i < len(edge); i++ {
+		bit := uint64(1) << edge[i]
+		if playerBB&bit != 0 && (*stable&bit != 0 || i == 0) {
+			*stable |= bit
+		} else if occupied&bit == 0 {
+			break
+		}
+	}
+	
+	// From right
+	for i := len(edge) - 1; i >= 0; i-- {
+		bit := uint64(1) << edge[i]
+		if playerBB&bit != 0 && (*stable&bit != 0 || i == len(edge)-1) {
+			*stable |= bit
+		} else if occupied&bit == 0 {
+			break
+		}
+	}
+}
+
+// Endgame evaluation with parity and exact counting
+func (ai *SimpleOthelloAI) evaluateEndgame(playerBB, opponentBB uint64, emptySquares int) float64 {
+	playerDiscs := bits.OnesCount64(playerBB)
+	opponentDiscs := bits.OnesCount64(opponentBB)
+	
+	// Basic disc difference
+	discDiff := 100.0 * float64(playerDiscs-opponentDiscs) / float64(playerDiscs+opponentDiscs)
+	
+	// Parity consideration (who gets the last move)
+	parityBonus := 0.0
+	if emptySquares <= 10 && emptySquares%2 == 1 {
+		parityBonus = 5.0 // Slight bonus for having last move
+	}
+	
+	return discDiff + parityBonus
+}
+
+// Helper function to check if position is adjacent to any piece in bitboard
+func (ai *SimpleOthelloAI) isAdjacentTo(pos int, bitboard uint64) bool {
+	row, col := pos/8, pos%8
+	
+	for dr := -1; dr <= 1; dr++ {
+		for dc := -1; dc <= 1; dc++ {
+			if dr == 0 && dc == 0 {
+				continue
+			}
+			
+			newRow, newCol := row+dr, col+dc
+			if newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8 {
+				adjPos := newRow*8 + newCol
+				if bitboard&(uint64(1)<<adjPos) != 0 {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 var timeout = time.Second * 3
