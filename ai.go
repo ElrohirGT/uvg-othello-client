@@ -886,7 +886,7 @@ func (ai *SimpleOthelloAI) isAdjacentTo(pos int, bitboard uint64) bool {
 	return false
 }
 
-var timeout = time.Second * 3
+var timeout = time.Millisecond * 2800
 
 // Example usage
 func main() {
